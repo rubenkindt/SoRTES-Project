@@ -1,0 +1,2 @@
+https://circuitdigest.com/microcontroller-projects/arduino-freertos-tutorial-using-semaphore-and-mutex-in-freertos-with-arduino
+https://create.arduino.cc/projecthub/feilipu/battery-powered-arduino-applications-through-freertos-3b7401?ref=tag&ref_id=scheduler&offset=1
