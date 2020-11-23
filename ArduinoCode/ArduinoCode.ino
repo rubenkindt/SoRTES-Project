@@ -1,4 +1,4 @@
-// .\ArduinoSketchUploader.exe --file= SorTeS_GW07.hex --port=COM74 --model=Leonardo
+// .\ArduinoSketchUploader.exe --file=SorTeS_GW07.hex --port=COM4 --model=Leonardo
 // TODO: ctrl F for 'TODO'
 
 #include <Arduino_FreeRTOS.h>
@@ -21,13 +21,23 @@ int firstdbEntry=nextEntryAdressLocation+8;
 // define tasks
 //void TaskBlink( void *pvParameters );
 //void TaskAnalogRead( void *pvParameters );
+void TaskPrintdB( void *pvParameters );
+TaskHandle_t TaskHandle_PrintdB;
+void TaskListenForBeacon( void *pvParameters );
+TaskHandle_t TaskHandle_ListenForBeacon;
+void TaskPrintLastEntry(void *pvParameters);
+TaskHandle_t TaskHandle_PrintLastEntry;
+
 
 //nextEntryAdress
 byte nextEntryAdress;
 bool listeningToCommands;
+byte command =0;
+
 
 // the setup function runs once when you press reset or power the board
 void setup() {
+  //clear database
   //EEPROM.write(nextEntryAdressLocation,byte(firstdbEntry));
   
   Serial.begin(9600);
@@ -43,7 +53,6 @@ void setup() {
   //INTERUPTS SETUP
   interrupts();
 
-
   
   //LORA setup
   Serial.println("LoRa Receiver");
@@ -55,43 +64,52 @@ void setup() {
   LoRa.onReceive(onReceive);
   LoRa.receive();
   
-  // Now set up two tasks to run independently.
-  /*
+  //Tasks
+  
+  //temp init
+  getTemperatureInternal();
+}
+
+void onReceive (int packetSize){
+  Serial.println("OnReceive");
   xTaskCreate(
-    TaskBlink
-    ,  "Blink"   // A name just for humans
+    TaskListenForBeacon
+    ,  "TaskListenForBeacon"   // A name just for humans
     ,  128  // This stack size can be checked & adjusted by reading the Stack Highwater
     ,  NULL
     ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-    ,  NULL );
-
-  xTaskCreate(
-    TaskAnalogRead
-    ,  "AnalogRead"
-    ,  128  // Stack size
-    ,  NULL
-    ,  1  // Priority
-    ,  NULL );
-
-  // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
-  */
+    ,  &TaskHandle_ListenForBeacon );
 }
 
 
 void loop() {
   //empty, we use Tasks
+
   
   if (listeningToCommands){
-    int command=0;
+    //Serial.println("passed listeningToCommands");
      if (Serial.available() > 0) {
         // read the incoming byte:
         command=Serial.parseInt();
         switch (command) {
           case 1:
-            printLastEntry();
+            xTaskCreate(
+                TaskprintLastEntry
+                ,  "TaskprintLastEntry"   // A name just for humans
+                ,  128  // This stack size can be checked & adjusted by reading the Stack Highwater
+                ,  NULL
+                ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+                ,  NULL );
             break;
           case 2:
-            printdb();
+            xTaskCreate(
+                TaskPrintdB
+                ,  "TaskPrintdB"   // A name just for humans
+                ,  128  // This stack size can be checked & adjusted by reading the Stack Highwater
+                ,  NULL
+                ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+                ,  &TaskHandle_PrintdB );
+            
             break;
           case 3:
             //deepSleep();
@@ -104,8 +122,137 @@ void loop() {
 }
 
 
+void TaskPrintdB(void *pvParameters)
+{
+  (void) pvParameters;
+  
+  //printdb
+  /*if (!Serial){
+    Serial.begin(9600);
+    while(!Serial){};
+  }
+  */
+  nextEntryAdress=EEPROM.read(nextEntryAdressLocation);
+  Serial.println("Printing DB");
 
-void onReceive (int packetSize){
+  if (nextEntryAdress<=firstdbEntry){
+    Serial.println("No entries");
+    return;
+  }
+  
+  /*
+  Serial.print("start at adress ");
+  Serial.print(firstdbEntry);
+  Serial.print(" - ");
+  Serial.print("stop at adress ");
+  Serial.println(nextEntryAdress-8);
+  */
+  
+  int entry = 1;
+  for (byte i=byte(firstdbEntry); i<nextEntryAdress; i+=8){
+    Serial.print("entry ");
+    Serial.print(entry);
+    Serial.print(": ");
+    Serial.println(i);
+    Serial.print("address: ");
+    Serial.print(EEPROM.read(i),DEC);
+    Serial.println("°c");
+    Serial.println();
+    entry++;
+  }
+  vTaskDelete(TaskHandle_PrintdB); //deletes task after done
+}
+
+void TaskListenForBeacon(void *pvParameters)
+{
+  (void) pvParameters;
+  
+  String gateway="";
+  while(gateway!="GW07"){
+    gateway="";
+    for (int i=0;i<4;i++) {            // can't use readString() in callback, so
+      gateway += (char)LoRa.read();      // add bytes one by one
+    }
+  }
+  Serial.print("Gateway: " );
+  Serial.println(gateway);
+  
+  int8_t sec;                 // payload of packet
+  char charr="";
+  charr=(char)LoRa.read();
+  
+  sec = charr - '0';      
+
+  Serial.println("sleep sec: " + String(sec));
+  Serial.println("RSSI: " + String(LoRa.packetRssi()));
+  //Serial.println("Snr: " + String(LoRa.packetSnr()));
+
+  listeningToCommands=false;
+
+  int8_t temp =getTemperatureInternal(); 
+  
+  LoRa.beginPacket(); 
+  LoRa.write(temp);                     
+  LoRa.endPacket();  
+  LoRa.receive(); //back to receive mode
+
+  Serial.print("Temp: ");
+  Serial.println(temp);
+  writeTempSleepEEPROM(temp,sec);
+  Serial.println("-------------");
+  //TODO ^ possibly remove it since it could use a lot of power
+  
+  vTaskDelete(TaskHandle_ListenForBeacon); //deletes task after done
+
+}
+
+void TaskprintLastEntry(void *pvParameters)
+{
+  (void) pvParameters;
+  
+  Serial.println("printLastEntry: ");
+  nextEntryAdress=EEPROM.read(nextEntryAdressLocation);
+  byte adressLastEntry=nextEntryAdress-8;
+  if (adressLastEntry<firstdbEntry){
+    Serial.println("No entries");
+    return;
+  }
+  //Serial.print("at adress: ");
+  //Serial.println(adressLastEntry);
+  Serial.print("last Recorded temp: ");
+  Serial.println(EEPROM.read(adressLastEntry),DEC);
+
+  vTaskDelete(TaskHandle_PrintdB); //deletes task after done
+
+}
+
+
+void writeTempSleepEEPROM(int8_t temp,int8_t sleepSec){
+  Serial.println("---------------------------");
+  Serial.print("Inputs: ");
+  Serial.print(temp);
+  Serial.print(" ");
+  Serial.println(sleepSec);
+  Serial.println("---------------------------");
+
+
+  EEPROM.write(sleepEEPROMLocation,sleepSec);
+  nextEntryAdress=EEPROM.read(nextEntryAdressLocation);
+  EEPROM.write(nextEntryAdress,temp);
+  
+  Serial.print("writen temp at adress: ");
+  Serial.println(nextEntryAdress,DEC);
+
+  Serial.print("writen temp : ");
+  Serial.println(temp,BIN);
+  
+  nextEntryAdress+=8; //move nextEntry 
+  EEPROM.write(nextEntryAdressLocation,nextEntryAdress);
+  
+}
+
+//Deprecated
+void X_onReceive (int packetSize){
   if (packetSize == 0) return;          // if there's no packet, return
 
   listeningToCommands=false;
@@ -145,30 +292,7 @@ void onReceive (int packetSize){
 }
 
 
-
-void writeTempSleepEEPROM(int8_t temp,int8_t sleepSec){
-  Serial.println("---------------------------");
-  Serial.print("Inputs: ");
-  Serial.print(temp);
-  Serial.print(" ");
-  Serial.println(sleepSec);
-  Serial.println("---------------------------");
-
-
-  EEPROM.write(sleepEEPROMLocation,sleepSec);
-  nextEntryAdress=EEPROM.read(nextEntryAdressLocation);
-  EEPROM.write(nextEntryAdress,temp);
-  
-  Serial.print("writen temp at adress: ");
-  Serial.println(nextEntryAdress,DEC);
-
-  Serial.print("writen temp : ");
-  Serial.println(temp,BIN);
-  
-  nextEntryAdress+=8; //move nextEntry 
-  EEPROM.write(nextEntryAdressLocation,nextEntryAdress);
-  
-}
+//Deprecated
 void printLastEntry(){
   Serial.println("printLastEntry: ");
   nextEntryAdress=EEPROM.read(nextEntryAdressLocation);
@@ -184,6 +308,7 @@ void printLastEntry(){
   
 }
 
+//Deprecated
 void printdb(){
   nextEntryAdress=EEPROM.read(nextEntryAdressLocation);
   Serial.println("Printing DB");
@@ -212,40 +337,6 @@ void printdb(){
     Serial.println();
   }
 
-}
-
-/*--------------------------------------------------*/
-/*---------------------- Tasks ---------------------*/
-/*--------------------------------------------------*/
-void TaskBlink(void *pvParameters)  // This is a task.
-{
-  (void) pvParameters;
-
-
-  // initialize digital LED_BUILTIN on pin 13 as an output.
-  pinMode(LED_BUILTIN, OUTPUT);
-
-  for (;;) // A Task shall never return or exit.
-  {
-    digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
-    vTaskDelay( 1000 / portTICK_PERIOD_MS ); // wait for one second
-    digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
-    vTaskDelay( 1000 / portTICK_PERIOD_MS ); // wait for one second
-  }
-}
-
-void TaskAnalogRead(void *pvParameters)  // This is a task.
-{
-  (void) pvParameters;
-  
-  for (;;)
-  {
-    // read the input on analog pin 0:
-    int sensorValue = analogRead(A0);
-    // print out the value you read:
-    Serial.println(sensorValue);
-    vTaskDelay(1);  // one tick delay (15ms) in between reads for stability
-  }
 }
 
 

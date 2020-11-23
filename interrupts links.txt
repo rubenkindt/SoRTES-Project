@@ -1,0 +1,3 @@
+https://github.com/Synapseware/examples/blob/master/chip-data/atmega32u4.md
+https://www.arduino.cc/reference/en/language/functions/external-interrupts/attachinterrupt/
+https://www.thethingsnetwork.org/forum/t/big-lora32u4-boards-topic/15273
