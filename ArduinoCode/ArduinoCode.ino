@@ -4,6 +4,8 @@
 #include <Arduino_FreeRTOS.h>
 #include <EEPROM.h> //to bel able to writ in EEPROM using EEPROM.write(addr, val); our EEPROM is 1024 bits big
 #include <LoRa.h>
+#include <avr/sleep.h>
+#include <avr/power.h>
 
 #define SCK     15
 #define MISO    14
@@ -27,7 +29,8 @@ void TaskListenForBeacon( void *pvParameters );
 TaskHandle_t TaskHandle_ListenForBeacon;
 void TaskPrintLastEntry(void *pvParameters);
 TaskHandle_t TaskHandle_PrintLastEntry;
-
+void TaskDeepSleep(void *pvParameters);
+TaskHandle_t TaskHandle_DeepSleep;
 
 //nextEntryAdress
 byte nextEntryAdress;
@@ -59,15 +62,24 @@ void setup() {
   LoRa.setPins(SS,RST,DI0);
   if (!LoRa.begin(BAND,PABOOST )) {
     Serial.println("Starting LoRa failed!");
-    while (1);
   }
-  LoRa.onReceive(onReceive);
-  LoRa.receive();
-  
-  //Tasks
+  //LoRa.onReceive(onReceive);
+  //LoRa.receive();
   
   //temp init
   getTemperatureInternal();
+  
+  //Tasks
+  xTaskCreate(
+    TaskDeepSleep
+    ,  "TaskDeepSleep"   // A name just for humans
+    ,  128  // This stack size can be checked & adjusted by reading the Stack Highwater
+    ,  NULL
+    ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+    ,  &TaskHandle_DeepSleep );
+  
+
+  
 }
 
 void onReceive (int packetSize){
@@ -84,7 +96,8 @@ void onReceive (int packetSize){
 
 void loop() {
   //empty, we use Tasks
-
+}
+/*
   
   if (listeningToCommands){
     //Serial.println("passed listeningToCommands");
@@ -111,16 +124,57 @@ void loop() {
                 ,  &TaskHandle_PrintdB );
             
             break;
-          case 3:
-            //deepSleep();
+          case 3:           
+            deepSleep();
             break;
           default:
             break;
         }
       }
     }
-}
+}*/
 
+ //source: https://www.gammon.com.au/power
+void TaskDeepSleep(void *pvParameters){
+  (void) pvParameters;
+  Serial.println("DeepSleepMode");
+  Serial.println("iets");
+  delay(500);
+  
+  noInterrupts();//turn off interrupts 
+  
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN); 
+  
+
+  Serial.end(); // disable serial
+  
+  LoRa.end(); //diable LoRa
+  
+  for (byte i = 0; i <= A5; i++){
+    pinMode (i, OUTPUT);    // changed as per below
+    digitalWrite (i, LOW);  //     ditto
+  }
+  // disable ADC
+  ADCSRA = 0; 
+
+  // turn off brown-out enable in software
+  // by changing C:\Users\ruben\Documents\Arduino\hardware\BSFrance-avr-master\avr
+        //"boards.txt"
+  //from lora32u4II.bootloader.extended_fuses=0xcb
+  // to  lora32u4II.bootloader.extended_fuses=0xF7
+
+
+  //low clock speed using :https://www.engbedded.com/fusecalc
+  //from lora32u4II.bootloader.low_fuses=0xE3
+  // to  lora32u4II.bootloader.low_fuses=0xff
+
+  
+  power_all_disable();//disables a lot of moduals
+  
+  
+  sleep_enable();
+  sleep_cpu();
+}
 
 void TaskPrintdB(void *pvParameters)
 {

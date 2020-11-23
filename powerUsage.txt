@@ -1,0 +1,28 @@
+Power usage:
+"deepsleep" with serial and LoRa disabled
+12,39mA
+
+Serial.end(); // disable serial
+LoRa.end(); //diable LoRa
+for (byte i = 0; i <= A5; i++){
+pinMode (i, OUTPUT);    // changed as per below
+digitalWrite (i, LOW);  //     ditto
+}
+12,53mA
+
+//turn off interrupts 
+noInterrupts()();
+
+Serial.println("DeepSleepMode");
+Serial.end(); // disable serial
+LoRa.end(); //diable LoRa
+for (byte i = 0; i <= A5; i++){
+pinMode (i, OUTPUT);    // changed as per below
+digitalWrite (i, LOW);  //     ditto
+}
+// disable ADC
+ADCSRA = 0; 
+
+// turn off brown-out enable in software
+MCUCR = bit (BODS) | bit (BODSE);
+MCUCR = bit (BODS);
