@@ -4,6 +4,8 @@
 #include <Arduino_FreeRTOS.h>
 #include <EEPROM.h> //to bel able to writ in EEPROM using EEPROM.write(addr, val); our EEPROM is 1024 bits big
 #include <LoRa.h>
+#include <SPI.h>
+
 
 #define SCK     15
 #define MISO    14
@@ -22,9 +24,10 @@ int firstdbEntry=nextEntryAdressLocation+8;
 //void TaskBlink( void *pvParameters );
 //void TaskAnalogRead( void *pvParameters );
 
-//nextEntryAdress
 byte nextEntryAdress;
 bool listeningToCommands;
+
+volatile byte command=0;
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -32,6 +35,7 @@ void setup() {
   
   Serial.begin(9600);
   while (!Serial);
+  Serial.println("LoRa Receiver");
   
   listeningToCommands=true;
   
@@ -41,12 +45,15 @@ void setup() {
 
 
   //INTERUPTS SETUP
-  interrupts();
-
-
+  //interrupts();
+  // SPCR - SPI Control Register
+  // According to struct table we enable the SPI and Interface
+  SPCR  |= 0b11000000;
+  // SPSR - SPI Status Register
+  SPSR  |= 0x00;
+  
   
   //LORA setup
-  Serial.println("LoRa Receiver");
   LoRa.setPins(SS,RST,DI0);
   if (!LoRa.begin(BAND,PABOOST )) {
     Serial.println("Starting LoRa failed!");
@@ -77,32 +84,53 @@ void setup() {
   */
 }
 
+volatile char buf [100];
+volatile byte pos;
 
+// SPI interrupt routine
+
+ISR (SPI_STC_vect){
+  byte c = SPDR;  // grab byte from SPI Data Register
+
+  buf [pos++] = c;
+}  // end of interrupt routine SPI_STC_vect
+
+/*
+  if (!listeningToCommands){
+    //Serial.end() //disable serial port //TODO enable
+    return;
+  }
+  if (Serial.available() > 0) {
+    // read the incoming byte:
+    command=Serial.parseInt();
+    
+  }
+*/
 void loop() {
   //empty, we use Tasks
-  
-  if (listeningToCommands){
-    int command=0;
-     if (Serial.available() > 0) {
-        // read the incoming byte:
-        command=Serial.parseInt();
-        switch (command) {
-          case 1:
-            printLastEntry();
-            break;
-          case 2:
-            printdb();
-            break;
-          case 3:
-            //deepSleep();
-            break;
-          default:
-            break;
-        }
-      }
-    }
-}
+  Serial.println(pos);
+  Serial.println(command,BIN);
+  delay(1000);
+  switch (command) {
+      case 1:
+        command =0;
+        printLastEntry();
+        break;
+      case 2:
+        command =0;
+        printdb();
+        break;
+      case 3:
+        command =0;
+        //deepSleep();
+        break;
+      default:
+        break;
+  }
 
+  //sleep
+  
+}
 
 
 void onReceive (int packetSize){
