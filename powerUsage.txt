@@ -26,3 +26,19 @@ ADCSRA = 0;
 // turn off brown-out enable in software
 MCUCR = bit (BODS) | bit (BODSE);
 MCUCR = bit (BODS);
+
+Timer
+
+16MHz = 16 000 000
+256/16,000,000 = 16µs
+16,000,000/256= 16µs
+
+256/128Hz 			= 2 sec
+256/85.333 ...Hz	= 3 sec
+256/64Hz 			= 4 sec
+256/51,2Hz 			= 5 sec
+256/42.666Hz 		= 6 sec
+256/36.57 ...Hz		= 7 sec
+256/32Hz 			= 8 sec
+256/28,44...Hz 		= 9 sec
+256/25,6Hz 			= 10 sec
