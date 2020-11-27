@@ -2,7 +2,7 @@
 // TODO: ctrl F for 'TODO'
 
 #include <Arduino_FreeRTOS.h>
-#include <EEPROM.h> //to bel able to writ in EEPROM using EEPROM.write(addr, val); our EEPROM is 1024 bits big
+#include <EEPROM.h> //to be able to writ in EEPROM using EEPROM.write(addr, val); our EEPROM is 1024 bits big
 #include <LoRa.h>
 #include <avr/sleep.h>
 #include <avr/power.h>
@@ -62,8 +62,10 @@ void setup() {
 
 
   //INTERUPTS SETUP
-  interrupts();
+  noInterrupts();
 
+  //temp init
+  getTemperatureInternal();
   
   //LORA setup
   Serial.println("LoRa Receiver");
@@ -75,8 +77,7 @@ void setup() {
   LoRa.receive();
 
   
-  //temp init
-  getTemperatureInternal();
+
   
   //Tasks
   /*xTaskCreate(
@@ -118,14 +119,7 @@ void onReceive (int packetSize){
     ,  &TaskHandle_ListenForBeacon );
 }
 
-
 /*
-ISR(TIMER1_COMPA_vect){
-  interruptHandlerStartLoRa();
-}
-*/
-
-
 void interruptHandlerStartLoRa(){
   Serial.println("Timer");
   //Timer1.detachInterrupt();
@@ -146,36 +140,32 @@ void interruptHandlerStartLoRa(){
     ,  &TaskHandle_ListenForBeacon );
 
 }
+*/
 
 void TaskListenForBeacon(void *pvParameters)
 {
   (void) pvParameters;
-while(true){
+//while(true){
   
   Serial.println("Gateway enter");
   
   String gateway="";
   int tries=0;
-  while(gateway!="GW07"){
-    gateway="";
-    for (int i=0;i<4;i++) {            // can't use readString() in callback, so
-      gateway += (char)LoRa.read();      // add bytes one by one
-    }
-    
-    /*
-    tries++;
-    if (tries>16){
-      Serial.println("to many tries, exited");
-      return; //to prevent inf LoRa read
-    }
-    */
+  gateway=""; 
+  while (LoRa.available()){
+    gateway += (char)LoRa.read();      // add bytes one by one
   }
   Serial.print("Gateway: " );
   Serial.println(gateway);
   
+  if (gateway.substring(0) == "GW07"){
+    vTaskDelete(TaskHandle_ListenForBeacon);
+    return; //to prevent inf LoRa read
+  }
+  
   int8_t sec;                 // payload of packet
   char charr="";
-  charr=(char)LoRa.read();
+  charr=gateway.charAt(4); // char 4 is our sleep sec
   
   sec = charr - '0';    
   
@@ -186,9 +176,9 @@ while(true){
   //vTaskDelay( 2000 );
   //Serial.println("WOken up");
 
-  //listeningToCommands=false; //to disable/delete the userinput task
+  listeningToCommands=false; //to disable/delete the userinput task
 
-  int8_t temp =getTemperatureInternal(); 
+  volatile int8_t temp = getTemperatureInternal(); 
 
   LoRa.beginPacket(); 
   LoRa.write(temp);                     
@@ -203,6 +193,7 @@ while(true){
 
   amoutBeaconsReceived++;
   if (amoutBeaconsReceived>=20){
+    Serial.println("amoutBeaconsReceived>=20");
     xTaskCreate(
     TaskDeepSleep
     ,  "TaskDeepSleep"   // A name just for humans
@@ -211,12 +202,14 @@ while(true){
     ,  3  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
     ,  &TaskHandle_DeepSleep );
   }
-}
+  vTaskDelete(TaskHandle_ListenForBeacon); //deletes task after done
+
+  
+//}
   //interruptHandlerStartLoRa();
 
   
-  //vTaskDelete(TaskHandle_ListenForBeacon); //deletes task after done
-
+  
 
   
   //long b=sec*1000000;
@@ -396,7 +389,6 @@ void TaskPrintdB(void *pvParameters)
     Serial.print(entry);
     Serial.print(": ");
     Serial.println(i);
-    Serial.print("address: ");
     Serial.print(EEPROM.read(i),DEC);
     Serial.println("°c");
     Serial.println();
@@ -428,29 +420,38 @@ void TaskprintLastEntry(void *pvParameters)
 
 
 void writeTempSleepEEPROM(int8_t temp,int8_t sleepSec){
+  /*
   Serial.println("---------------------------");
   Serial.print("Inputs: ");
   Serial.print(temp);
   Serial.print(" ");
   Serial.println(sleepSec);
   Serial.println("---------------------------");
-
+  */
 
   EEPROM.write(sleepEEPROMLocation,sleepSec);
   nextEntryAdress=EEPROM.read(nextEntryAdressLocation);
-  EEPROM.write(nextEntryAdress,temp);
   
+  if (nextEntryAdress >= 256){ // overflow
+    nextEntryAdress=firstdbEntry;
+  }
+  
+  EEPROM.write(nextEntryAdress,temp);
+
+  /*
   Serial.print("writen temp at adress: ");
   Serial.println(nextEntryAdress,DEC);
 
   Serial.print("writen temp : ");
   Serial.println(temp,BIN);
+  */
   
   nextEntryAdress+=8; //move nextEntry 
   EEPROM.write(nextEntryAdressLocation,nextEntryAdress);
   
 }
 
+/*
 //Deprecated
 void X_onReceive (int packetSize){
   if (packetSize == 0) return;          // if there's no packet, return
@@ -507,7 +508,9 @@ void printLastEntry(){
   Serial.println(EEPROM.read(adressLastEntry),DEC);
   
 }
+*/
 
+/*
 //Deprecated
 void printdb(){
   nextEntryAdress=EEPROM.read(nextEntryAdressLocation);
@@ -518,13 +521,7 @@ void printdb(){
     return;
   }
   
-  /*
-  Serial.print("start at adress ");
-  Serial.print(firstdbEntry);
-  Serial.print(" - ");
-  Serial.print("stop at adress ");
-  Serial.println(nextEntryAdress-8);
-  */
+
   
   int entry = 1;
   for (byte i=byte(firstdbEntry); i<nextEntryAdress; i+=8){
@@ -538,6 +535,7 @@ void printdb(){
   }
 
 }
+*/
 
 
 //function modified from
