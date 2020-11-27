@@ -6,7 +6,6 @@
 #include <LoRa.h>
 #include <avr/sleep.h>
 #include <avr/power.h>
-#include <TimerOne.h>
 
 #define SCK     15
 #define MISO    14
@@ -62,32 +61,37 @@ void setup() {
 
 
   //INTERUPTS SETUP
-  noInterrupts();
+  interrupts();
 
   //temp init
   getTemperatureInternal();
   
   //LORA setup
+  
   Serial.println("LoRa Receiver");
   LoRa.setPins(SS,RST,DI0);
   if (!LoRa.begin(BAND,PABOOST )) {
     Serial.println("Starting LoRa failed!");
   }
+  /*
   LoRa.onReceive(onReceive);
   LoRa.receive();
-
+  */
   
-
+  delay(1000);
+  Serial.println("task started");
+  delay(1000);
   
   //Tasks
-  /*xTaskCreate(
+  xTaskCreate(
     TaskDeepSleep
     ,  "TaskDeepSleep"   // A name just for humans
     ,  128  // This stack size can be checked & adjusted by reading the Stack Highwater
     ,  NULL
     ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
     ,  &TaskHandle_DeepSleep );
-*/
+
+/*
   xTaskCreate(
     TaskUserInput
     ,  "TaskUserInput"   // A name just for humans
@@ -95,7 +99,7 @@ void setup() {
     ,  NULL
     ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
     ,  &TaskHandle_UserInput );
-
+*/
 /*
   xTaskCreate(
     TaskListenForBeacon
@@ -147,7 +151,6 @@ void TaskListenForBeacon(void *pvParameters)
   (void) pvParameters;
 //while(true){
   
-  Serial.println("Gateway enter");
   
   String gateway="";
   int tries=0;
@@ -176,7 +179,12 @@ void TaskListenForBeacon(void *pvParameters)
   //vTaskDelay( 2000 );
   //Serial.println("WOken up");
 
-  listeningToCommands=false; //to disable/delete the userinput task
+  if (listeningToCommands){
+    Serial.println("stopping listening to userinput");
+    vTaskDelete(TaskHandle_UserInput);
+    listeningToCommands=false; //to disable/delete the userinput task
+  }
+  
 
   volatile int8_t temp = getTemperatureInternal(); 
 
@@ -192,7 +200,7 @@ void TaskListenForBeacon(void *pvParameters)
   Serial.println("-------------");
 
   amoutBeaconsReceived++;
-  if (amoutBeaconsReceived>=20){
+  if (amoutBeaconsReceived>=2){
     Serial.println("amoutBeaconsReceived>=20");
     xTaskCreate(
     TaskDeepSleep
@@ -201,6 +209,7 @@ void TaskListenForBeacon(void *pvParameters)
     ,  NULL
     ,  3  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
     ,  &TaskHandle_DeepSleep );
+    LoRa.end();
   }
   vTaskDelete(TaskHandle_ListenForBeacon); //deletes task after done
 
@@ -313,6 +322,7 @@ void TaskUserInput(void *pvParameters){
         vTaskDelete(TaskHandle_UserInput); //deletes task after done
         break;
       }
+      vTaskDelay(250);
   }
 }
 
@@ -321,6 +331,14 @@ void TaskDeepSleep(void *pvParameters){
   (void) pvParameters;
   Serial.println("DeepSleepMode");
   vTaskDelay(500);
+
+  //making sure no tasks are left running
+  /*
+  vTaskDelete(TaskHandle_PrintdB);
+  vTaskDelete(TaskHandle_PrintLastEntry);
+  vTaskDelete(TaskHandle_ListenForBeacon);
+  vTaskDelete(TaskHandle_UserInput);
+  */
   
   noInterrupts();//turn off interrupts 
   
