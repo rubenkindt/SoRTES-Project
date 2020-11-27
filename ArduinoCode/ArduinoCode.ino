@@ -19,6 +19,7 @@
 int sleepEEPROMLocation=0;
 int nextEntryAdressLocation=8;
 int firstdbEntry=nextEntryAdressLocation+8;
+const int beaconsUntilSleep=20;
 
 // define tasks
 //void TaskBlink( void *pvParameters );
@@ -45,18 +46,14 @@ volatile int amoutBeaconsReceived=0;
 void setup() {
   //clear database
   //EEPROM.write(nextEntryAdressLocation,byte(firstdbEntry));
-
-  //Timer
-  //Timer1.stop();
-
+  
   for (byte i = 0; i <= A5; i++){
     pinMode (i, OUTPUT);    // changed as per below
     digitalWrite (i, LOW);  //     ditto
   }
   
   Serial.begin(9600);
-  delay(100);
-  //while (!Serial);
+  while (!Serial);
   
   listeningToCommands=true;
   
@@ -64,24 +61,13 @@ void setup() {
   EEPROM.write(sleepEEPROMLocation,byte(10)); //10 sec
   nextEntryAdress=EEPROM.read(nextEntryAdressLocation);
 
-
-  //INTERUPTS SETUP
-  interrupts();
-
   //temp init
-  getTemperatureInternal();
+  getTemperatureInternal(); //init temp sensor
   
   //LORA setup
-  
-  Serial.println("LoRa Receiver");
   LoRa.setPins(SS,RST,DI0);
-  //if (!LoRa.begin(BAND,PABOOST )) {
-  //  Serial.println("Starting LoRa failed!");
-  //}
   
-  //LoRa.onReceive(onReceive); /: we use a task for this
-  //LoRa.receive();
-
+  Serial.println("program started");
 
   
   //Tasks
@@ -103,44 +89,6 @@ void setup() {
     ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
     ,  &TaskHandle_UserInput );
 
-
-  xTaskCreate(
-    TaskListenForBeacon
-    ,  "TaskListenForBeacon"   // A name just for humans
-    ,  128  // This stack size can be checked & adjusted by reading the Stack Highwater
-    ,  NULL
-    ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-    ,  &TaskHandle_ListenForBeacon );
-    
-
-
-}
-
-/*
-void onReceive (int packetSize){
-  Serial.println("OnReceive");
-  xTaskCreate(
-    TaskListenForBeacon
-    ,  "TaskListenForBeacon"   // A name just for humans
-    ,  128  // This stack size can be checked & adjusted by reading the Stack Highwater
-    ,  NULL
-    ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-    ,  &TaskHandle_ListenForBeacon );
-}
-*/
-
-/*
-void interruptHandlerStartLoRa(){
-  Serial.println("Timer");
-  //Timer1.detachInterrupt();
-  //LORA setup
-  Serial.println("LoRa setup");
-  LoRa.setPins(SS,RST,DI0);
-  if (!LoRa.begin(BAND,PABOOST )) {
-    Serial.println("Starting LoRa failed!");
-  }
-  LoRa.receive();
-  
   xTaskCreate(
     TaskListenForBeacon
     ,  "TaskListenForBeacon"   // A name just for humans
@@ -150,19 +98,21 @@ void interruptHandlerStartLoRa(){
     ,  &TaskHandle_ListenForBeacon );
 
 }
-*/
+
+
 
 void TaskListenForBeacon(void *pvParameters)
 {
-  
   (void) pvParameters;
+
+  Serial.println("started listening");
   
   while(true){
     LoRa.setPins(SS,RST,DI0);
     if (!LoRa.begin(BAND,PABOOST)){
       Serial.println("Lora begin failed");
     }
-    LoRa.receive();//sizeof("GW071"));
+    LoRa.receive();
   
     String gateway="";
     int tries=0;
@@ -177,12 +127,10 @@ void TaskListenForBeacon(void *pvParameters)
         while (LoRa.available()){
           gateway += (char)LoRa.read();      // add bytes one by one
         }
-        if (gateway.substring(0,4) == "GW07"){
+        if (gateway.substring(0,4) == "GW07"){ //find GW07 in the received string
           break;
         }   
       }
-      //Serial.println("sample");
-      //vTaskDelay(50 / portTICK_PERIOD_MS );
     }
     Serial.print("Gateway: " );
     Serial.println(gateway);
@@ -201,8 +149,7 @@ void TaskListenForBeacon(void *pvParameters)
     LoRa.beginPacket(); 
     LoRa.write(temp);                     
     LoRa.endPacket();  
-    //LoRa.receive();
-    LoRa.end(); //back to receive mode
+    LoRa.end();
     
     Serial.print("Temp: ");
     Serial.println(temp);
@@ -216,7 +163,7 @@ void TaskListenForBeacon(void *pvParameters)
     }
   
     amoutBeaconsReceived++;
-    if (amoutBeaconsReceived>=20){
+    if (amoutBeaconsReceived>=beaconsUntilSleep){
       Serial.println("Winterslaap Slaapwel");
       xTaskCreate(
       TaskDeepSleep
@@ -231,7 +178,7 @@ void TaskListenForBeacon(void *pvParameters)
     
     TickType_t xDelay = 1000 * (sec);
     vTaskDelay( xDelay /portTICK_PERIOD_MS);
-    Serial.println("WOken up");
+    //Serial.println("WOken up");
     
   }
 }
@@ -246,12 +193,9 @@ void vApplicationIdleHook( void ){
 }
 
 void mySleep(){
-   
-  // disable ADC
-  ADCSRA = 0; 
 
- //set_sleep_mode (SLEEP_MODE_IDLE);  
-  set_sleep_mode (SLEEP_MODE_STANDBY);  
+  //set_sleep_mode (SLEEP_MODE_IDLE);  works also but uses 12mA
+  set_sleep_mode (SLEEP_MODE_ADC);  // uses 11.3mA
   
   noInterrupts ();           // timed sequence follows
   sleep_enable();
@@ -263,7 +207,6 @@ void mySleep(){
  //source: https://www.gammon.com.au/power
 void TaskDeepSleep(void *pvParameters){
   (void) pvParameters;
-
 
   //making sure no tasks are left running
   
@@ -296,7 +239,7 @@ void TaskDeepSleep(void *pvParameters){
   // to  lora32u4II.bootloader.low_fuses=0xff
 
   
-  //power_all_disable();//disables a lot of moduals
+  //power_all_disable();//disables a lot of moduals but increases power usage somehow
   
   set_sleep_mode (SLEEP_MODE_PWR_DOWN);  
   noInterrupts ();           // timed sequence follows
@@ -309,60 +252,53 @@ void TaskDeepSleep(void *pvParameters){
 
 void TaskUserInput(void *pvParameters){
   (void) pvParameters;
-  while(true){
-     if (Serial.available() > 0) {
-        // read the incoming byte:
-        //char command2=Serial.read();
-        //Serial.print(Serial.read());
-        command=Serial.parseInt(SKIP_ALL);
-        switch (command) {
-          case 1:
-            Serial.println("1");
-            xTaskCreate(
-                TaskprintLastEntry
-                ,  "TaskprintLastEntry"   // A name just for humans
-                ,  128  // This stack size can be checked & adjusted by reading the Stack Highwater
-                ,  NULL
-                ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-                ,  NULL );
-            break;
-          case 2:
-            Serial.println("2");
-            xTaskCreate(
-                TaskPrintdB
-                ,  "TaskPrintdB"   // A name just for humans
-                ,  128  // This stack size can be checked & adjusted by reading the Stack Highwater
-                ,  NULL
-                ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-                ,  &TaskHandle_PrintdB );
-            
-            break;
-          case 3:    
-            Serial.println("3");       
-            xTaskCreate(
-              TaskDeepSleep
-              ,  "TaskDeepSleep"   // A name just for humans
+  while(true){    
+    if (Serial.available() > 0) {
+      command=Serial.parseInt(SKIP_ALL); // ignore all nont int characters
+      switch (command) {
+        case 1:
+          Serial.println("1");
+          xTaskCreate(
+              TaskprintLastEntry
+              ,  "TaskprintLastEntry"   // A name just for humans
               ,  128  // This stack size can be checked & adjusted by reading the Stack Highwater
               ,  NULL
               ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-              ,  &TaskHandle_DeepSleep );
-            vTaskDelete(TaskHandle_UserInput); // delete this task
-            break;
-          default:
-            break;
-        }
+              ,  NULL );
+          break;
+        case 2:
+          Serial.println("2");
+          xTaskCreate(
+              TaskPrintdB
+              ,  "TaskPrintdB"   // A name just for humans
+              ,  128  // This stack size can be checked & adjusted by reading the Stack Highwater
+              ,  NULL
+              ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+              ,  &TaskHandle_PrintdB );
+          
+          break;
+        case 3:    
+          Serial.println("3");       
+          xTaskCreate(
+            TaskDeepSleep
+            ,  "TaskDeepSleep"   // A name just for humans
+            ,  128  // This stack size can be checked & adjusted by reading the Stack Highwater
+            ,  NULL
+            ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+            ,  &TaskHandle_DeepSleep );
+          vTaskDelete(TaskHandle_UserInput); // delete this task
+          break;
+        default:
+          break;
       }
-      if (!listeningToCommands){
-        //Serial.println("stopping listening to userinput");
-        //vTaskDelay(500);
-        //Serial.end();
-        vTaskDelete(TaskHandle_UserInput); //deletes task after done
-        break;
-      }
-      vTaskDelay(50/portTICK_PERIOD_MS);
+    }
+    if (!listeningToCommands){
+      vTaskDelete(TaskHandle_UserInput); //deletes task after done
+      break;
+    }
+    vTaskDelay(50/portTICK_PERIOD_MS);
   }
 }
-
 
 
 void TaskPrintdB(void *pvParameters)
@@ -370,11 +306,6 @@ void TaskPrintdB(void *pvParameters)
   (void) pvParameters;
   
   //printdb
-  /*if (!Serial){
-    Serial.begin(9600);
-    while(!Serial){};
-  }
-  */
   nextEntryAdress=EEPROM.read(nextEntryAdressLocation);
   Serial.println("Printing DB");
 
@@ -395,8 +326,7 @@ void TaskPrintdB(void *pvParameters)
   for (byte i=byte(firstdbEntry); i<nextEntryAdress; i+=8){
     Serial.print("entry ");
     Serial.print(entry);
-    Serial.print(": ");
-    Serial.println(i);
+    Serial.println(": ");
     Serial.print(EEPROM.read(i),DEC);
     Serial.println("°c");
     Serial.println();
@@ -420,7 +350,9 @@ void TaskprintLastEntry(void *pvParameters)
   //Serial.print("at adress: ");
   //Serial.println(adressLastEntry);
   Serial.print("last Recorded temp: ");
-  Serial.println(EEPROM.read(adressLastEntry),DEC);
+  Serial.print(EEPROM.read(adressLastEntry),DEC);
+  Serial.println("°C");
+  
 
   vTaskDelete(TaskHandle_PrintdB); //deletes task after done
 
@@ -451,100 +383,13 @@ void writeTempSleepEEPROM(int8_t temp,int8_t sleepSec){
   Serial.println(nextEntryAdress,DEC);
 
   Serial.print("writen temp : ");
-  Serial.println(temp,BIN);
+  a.println(temp,BIN);
   */
   
   nextEntryAdress+=8; //move nextEntry 
   EEPROM.write(nextEntryAdressLocation,nextEntryAdress);
   
 }
-
-/*
-//Deprecated
-void X_onReceive (int packetSize){
-  if (packetSize == 0) return;          // if there's no packet, return
-
-  listeningToCommands=false;
-
-  String gateway="";
-  for (int i=0;i<4;i++) {            // can't use readString() in callback, so
-    gateway += (char)LoRa.read();      // add bytes one by one
-  }
-  Serial.print("Gateway: " );
-  Serial.println(gateway);
-  
-  if (gateway!="GW07"){
-    //Serial.println("wrong Gateway");
-    return;
-  }
-  
-  int8_t sec;                 // payload of packet
-  char charr="";
-  charr=(char)LoRa.read();
-  
-  sec = charr - '0';      
-
-  Serial.println("sleep sec: " + String(sec));
-  Serial.println("RSSI: " + String(LoRa.packetRssi()));
-  //Serial.println("Snr: " + String(LoRa.packetSnr()));
-
-  // send ack with temp
-  LoRa.beginPacket(); 
-  int8_t temp =getTemperatureInternal(); 
-  LoRa.write(temp);                     
-  LoRa.endPacket();
-  Serial.print("Temp: ");
-  Serial.println(temp);
-  writeTempSleepEEPROM(temp,sec);
-  Serial.println("-------------");
-  LoRa.receive();
-}
-
-
-//Deprecated
-void printLastEntry(){
-  Serial.println("printLastEntry: ");
-  nextEntryAdress=EEPROM.read(nextEntryAdressLocation);
-  byte adressLastEntry=nextEntryAdress-8;
-  if (adressLastEntry<firstdbEntry){
-    Serial.println("No entries");
-    return;
-  }
-  //Serial.print("at adress: ");
-  //Serial.println(adressLastEntry);
-  Serial.print("last Recorded temp: ");
-  Serial.println(EEPROM.read(adressLastEntry),DEC);
-  
-}
-*/
-
-/*
-//Deprecated
-void printdb(){
-  nextEntryAdress=EEPROM.read(nextEntryAdressLocation);
-  Serial.println("Printing DB");
-
-  if (nextEntryAdress<=firstdbEntry){
-    Serial.println("No entries");
-    return;
-  }
-  
-
-  
-  int entry = 1;
-  for (byte i=byte(firstdbEntry); i<nextEntryAdress; i+=8){
-    Serial.print("entry ");
-    Serial.print(entry);
-    Serial.print(": ");
-    Serial.println(i);
-    Serial.print(EEPROM.read(i),DEC);
-    Serial.println("°c");
-    Serial.println();
-  }
-
-}
-*/
-
 
 //function modified from
 //https://www.avrfreaks.net/forum/teensy-atmega32u4-chip-temperature-sensor-0
@@ -578,5 +423,6 @@ int8_t getTemperatureInternal() {
   int a = (high << 8) | low;
 
   //return temperature in C
-  return a - (272+3); // +3 is calibration
+  return a - (272+3); // +3 is calibration, I callibrated the board when it is warmed up
+  //the board generates heat itself
 }

@@ -2,6 +2,10 @@ https://www.gammon.com.au/power
 https://www.engbedded.com/fusecalc
 https://loranow.com/lora-and-sleep/
 
+atmega32u4 https://forum.arduino.cc/index.php?topic=687338.0
+
+https://harizanov.com/2013/02/power-saving-techniques-on-the-atmega32u4/
+
 00416     #define SLEEP_MODE_IDLE         (0)
 00417     #define SLEEP_MODE_ADC          _BV(SM0)
 00418     #define SLEEP_MODE_PWR_DOWN     _BV(SM1)
