@@ -72,6 +72,7 @@ void setup() {
   LoRa.setPins(SS,RST,DI0);
   if (!LoRa.begin(BAND,PABOOST )) {
     Serial.println("Starting LoRa failed!");
+    while (1);
   }
   /*
   LoRa.onReceive(onReceive);
@@ -109,6 +110,8 @@ void setup() {
     ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
     ,  &TaskHandle_ListenForBeacon );
     */
+
+
 }
 
 
@@ -150,8 +153,7 @@ void TaskListenForBeacon(void *pvParameters)
 {
   (void) pvParameters;
 //while(true){
-  
-  
+
   String gateway="";
   int tries=0;
   gateway=""; 
@@ -373,7 +375,9 @@ void TaskDeepSleep(void *pvParameters){
   
   sleep_enable();
   sleep_cpu();
+
 }
+
 
 void TaskPrintdB(void *pvParameters)
 {
