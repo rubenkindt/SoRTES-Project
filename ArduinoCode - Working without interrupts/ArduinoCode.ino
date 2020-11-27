@@ -48,14 +48,8 @@ void setup() {
 
   //Timer
   //Timer1.stop();
-
-  for (byte i = 0; i <= A5; i++){
-    pinMode (i, OUTPUT);    // changed as per below
-    digitalWrite (i, LOW);  //     ditto
-  }
   
   Serial.begin(9600);
-  delay(100);
   //while (!Serial);
   
   listeningToCommands=true;
@@ -75,12 +69,13 @@ void setup() {
   
   Serial.println("LoRa Receiver");
   LoRa.setPins(SS,RST,DI0);
-  //if (!LoRa.begin(BAND,PABOOST )) {
-  //  Serial.println("Starting LoRa failed!");
-  //}
+  if (!LoRa.begin(BAND,PABOOST )) {
+    Serial.println("Starting LoRa failed!");
+    
+  }
   
-  //LoRa.onReceive(onReceive); /: we use a task for this
-  //LoRa.receive();
+  LoRa.onReceive(onReceive);
+  LoRa.receive();
 
 
   
@@ -103,7 +98,7 @@ void setup() {
     ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
     ,  &TaskHandle_UserInput );
 
-
+/*
   xTaskCreate(
     TaskListenForBeacon
     ,  "TaskListenForBeacon"   // A name just for humans
@@ -111,12 +106,12 @@ void setup() {
     ,  NULL
     ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
     ,  &TaskHandle_ListenForBeacon );
-    
+    */
 
 
 }
 
-/*
+
 void onReceive (int packetSize){
   Serial.println("OnReceive");
   xTaskCreate(
@@ -127,7 +122,7 @@ void onReceive (int packetSize){
     ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
     ,  &TaskHandle_ListenForBeacon );
 }
-*/
+
 
 /*
 void interruptHandlerStartLoRa(){
@@ -154,112 +149,137 @@ void interruptHandlerStartLoRa(){
 
 void TaskListenForBeacon(void *pvParameters)
 {
-  
   (void) pvParameters;
-  
-  while(true){
-    LoRa.setPins(SS,RST,DI0);
-    if (!LoRa.begin(BAND,PABOOST)){
-      Serial.println("Lora begin failed");
-    }
-    LoRa.receive();//sizeof("GW071"));
-  
-    String gateway="";
-    int tries=0;
-    int size;
-    
-    while (true){
-      gateway=""; 
-      int chars=0;
+//while(true){
 
-      size =LoRa.parsePacket();
-      if (size){
-        while (LoRa.available()){
-          gateway += (char)LoRa.read();      // add bytes one by one
-        }
-        if (gateway.substring(0,4) == "GW07"){
-          break;
-        }   
-      }
-      //Serial.println("sample");
-      //vTaskDelay(50 / portTICK_PERIOD_MS );
+  String gateway="";
+  int tries=0;
+  gateway=""; 
+  while (LoRa.available()){
+    tries++;
+    if (tries>8){ //diable inf loop
+      break; 
     }
-    Serial.print("Gateway: " );
-    Serial.println(gateway);
-    
-    int8_t sec;                 // payload of packet
-    char charr="";
-    charr=gateway.charAt(4); // char 4 is our sleep sec
-    
-    sec = charr - '0';    
-    
-    Serial.print("SLEEPTIME ");
-    Serial.println(sec);
-
-    volatile int8_t temp = getTemperatureInternal(); 
-  
-    LoRa.beginPacket(); 
-    LoRa.write(temp);                     
-    LoRa.endPacket();  
-    //LoRa.receive();
-    LoRa.end(); //back to receive mode
-    
-    Serial.print("Temp: ");
-    Serial.println(temp);
-    writeTempSleepEEPROM(temp,sec);
-    Serial.println("-------------");
-  
-    if (listeningToCommands){
-      Serial.println("stopping listening to userinput");
-      vTaskDelete(TaskHandle_UserInput);
-      listeningToCommands=false; //to disable/delete the userinput task
-    }
-  
-    amoutBeaconsReceived++;
-    if (amoutBeaconsReceived>=20){
-      Serial.println("Winterslaap Slaapwel");
-      xTaskCreate(
-      TaskDeepSleep
-      ,  "TaskDeepSleep"   // A name just for humans
-      ,  128  // This stack size can be checked & adjusted by reading the Stack Highwater
-      ,  NULL
-      ,  3  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-      ,  &TaskHandle_DeepSleep );
-      LoRa.end();
-      vTaskDelete(TaskHandle_ListenForBeacon); //deletes task after done
-    }
-    
-    TickType_t xDelay = 1000 * (sec);
-    vTaskDelay( xDelay /portTICK_PERIOD_MS);
-    Serial.println("WOken up");
-    
+    gateway += (char)LoRa.read();      // add bytes one by one
   }
+  Serial.print("Gateway: " );
+  Serial.println(gateway);
+  
+  if (gateway.substring(0) == "GW07"){
+    vTaskDelete(TaskHandle_ListenForBeacon);
+    return; //to prevent inf LoRa read
+  }
+  
+  int8_t sec;                 // payload of packet
+  char charr="";
+  charr=gateway.charAt(4); // char 4 is our sleep sec
+  
+  sec = charr - '0';    
+  
+  Serial.print("SLEEPTIME ");
+  Serial.println(sec);
+
+  if (listeningToCommands){
+    Serial.println("stopping listening to userinput");
+    vTaskDelete(TaskHandle_UserInput);
+    listeningToCommands=false; //to disable/delete the userinput task
+  }
+  
+
+  volatile int8_t temp = getTemperatureInternal(); 
+
+  LoRa.beginPacket(); 
+  LoRa.write(temp);                     
+  LoRa.endPacket();  
+  LoRa.receive();
+  //LoRa.end(); //back to receive mode
+  
+  Serial.print("Temp: ");
+  Serial.println(temp);
+  writeTempSleepEEPROM(temp,sec);
+  Serial.println("-------------");
+
+  //TickType_t xDelay = 1000 * sec;
+  //vTaskDelay( xDelay );
+  //Serial.println("WOken up");
+
+  amoutBeaconsReceived++;
+  if (amoutBeaconsReceived>=20){
+    Serial.println("amoutBeaconsReceived>=20");
+    xTaskCreate(
+    TaskDeepSleep
+    ,  "TaskDeepSleep"   // A name just for humans
+    ,  128  // This stack size can be checked & adjusted by reading the Stack Highwater
+    ,  NULL
+    ,  3  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+    ,  &TaskHandle_DeepSleep );
+    LoRa.end();
+  }
+  vTaskDelete(TaskHandle_ListenForBeacon); //deletes task after done
+
+  
+//}
+  //interruptHandlerStartLoRa();
+
+  //long b=sec*1000000;
+  //Serial.println(b);
+  
+  //Timer1.initialize(b); //TODO when change of clk speed <- needs to change
+  //Timer1.attachInterrupt(interruptHandlerStartLoRa); //wake up a function that will start this task
+  //Timer1.start();
+
+//source :https://www.instructables.com/Arduino-Timer-Interrupts/
+/*  cli();
+
+  TCCR1A = 0;// set entire TCCR1A register to 0
+  TCCR1B = 0;// same for TCCR1B
+  TCNT1  = 0;//initialize counter value to 0
+  // set compare match register for 1hz increments
+  long nr = (16*10^6) /(sec*1024);
+  OCR1A = nr;  // = (16*10^6) / (1*1024) - 1 (must be <65536)
+  // turn on CTC mode
+  TCCR1B |= (1 << WGM12);
+  // Set CS12 and CS10 bits for 1024 prescaler
+  TCCR1B |= (1 << CS12) | (1 << CS10);  
+  // enable timer compare interrupt
+  TIMSK1 |= (1 << OCIE1A);
+  sei();
+
+  Serial.println("sleep sec: " + String(sec));
+  Serial.println("RSSI: " + String(LoRa.packetRssi()));
+  //Serial.println("Snr: " + String(LoRa.packetSnr()));
+*/
+//source:https://www.robotshop.com/community/forum/t/arduino-101-timers-and-interrupts/13072
+// initialize timer1 
+/*
+  noInterrupts();           // disable all interrupts
+  TCCR1A = 0;
+  TCCR1B = 0;
+  long nr = (16*10^6) /(sec*1024);
+  TCNT1 = nr;            // preload timer 65536-16MHz/256/2Hz
+  TCCR1B |= (1 << CS12);    // 256 prescaler 
+  TIMSK1 |= (1 << TOIE1);   // enable timer overflow interrupt
+  interrupts();             // enable all interrupts
+
+*/
+
+ 
 }
+
 
 void loop() {
-  mySleep();
+  //mySleep();
 }
 
-
+/*
 void vApplicationIdleHook( void ){
   mySleep();
 }
 
 void mySleep(){
-   
-  // disable ADC
-  ADCSRA = 0; 
-
- //set_sleep_mode (SLEEP_MODE_IDLE);  
-  set_sleep_mode (SLEEP_MODE_STANDBY);  
-  
-  noInterrupts ();           // timed sequence follows
-  sleep_enable();
-  interrupts ();
-  sleep_cpu();
+  Serial.println("idl");
 }
-
-
+*/
  //source: https://www.gammon.com.au/power
 void TaskDeepSleep(void *pvParameters){
   (void) pvParameters;
@@ -312,9 +332,7 @@ void TaskUserInput(void *pvParameters){
   while(true){
      if (Serial.available() > 0) {
         // read the incoming byte:
-        //char command2=Serial.read();
-        //Serial.print(Serial.read());
-        command=Serial.parseInt(SKIP_ALL);
+        command=Serial.parseInt();
         switch (command) {
           case 1:
             Serial.println("1");
@@ -359,7 +377,7 @@ void TaskUserInput(void *pvParameters){
         vTaskDelete(TaskHandle_UserInput); //deletes task after done
         break;
       }
-      vTaskDelay(50/portTICK_PERIOD_MS);
+      vTaskDelay(500);
   }
 }
 

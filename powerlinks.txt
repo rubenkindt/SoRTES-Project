@@ -1,3 +1,10 @@
 https://www.gammon.com.au/power
 https://www.engbedded.com/fusecalc
 https://loranow.com/lora-and-sleep/
+
+00416     #define SLEEP_MODE_IDLE         (0)
+00417     #define SLEEP_MODE_ADC          _BV(SM0)
+00418     #define SLEEP_MODE_PWR_DOWN     _BV(SM1)
+00419     #define SLEEP_MODE_PWR_SAVE     (_BV(SM0) | _BV(SM1))
+00420     #define SLEEP_MODE_STANDBY      (_BV(SM1) | _BV(SM2))
+00421     #define SLEEP_MODE_EXT_STANDBY  (_BV(SM0) | _BV(SM1) | _BV(SM2))
