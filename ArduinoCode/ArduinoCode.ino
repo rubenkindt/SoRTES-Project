@@ -35,7 +35,6 @@ void TaskUserInput(void *pvParameters);
 TaskHandle_t TaskHandle_UserInput;
 
 
-//nextEntryAdress
 byte nextEntryAdress;
 volatile bool listeningToCommands;
 byte command =0;
@@ -51,7 +50,7 @@ void setup() {
   //Timer1.stop();
   
   Serial.begin(9600);
-  while (!Serial);
+  //while (!Serial);
   
   listeningToCommands=true;
   
@@ -72,18 +71,16 @@ void setup() {
   LoRa.setPins(SS,RST,DI0);
   if (!LoRa.begin(BAND,PABOOST )) {
     Serial.println("Starting LoRa failed!");
-    while (1);
+    
   }
-  /*
+  
   LoRa.onReceive(onReceive);
   LoRa.receive();
-  */
-  
-  delay(1000);
-  Serial.println("task started");
-  delay(1000);
+
+
   
   //Tasks
+  /*
   xTaskCreate(
     TaskDeepSleep
     ,  "TaskDeepSleep"   // A name just for humans
@@ -91,8 +88,8 @@ void setup() {
     ,  NULL
     ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
     ,  &TaskHandle_DeepSleep );
+*/
 
-/*
   xTaskCreate(
     TaskUserInput
     ,  "TaskUserInput"   // A name just for humans
@@ -100,7 +97,7 @@ void setup() {
     ,  NULL
     ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
     ,  &TaskHandle_UserInput );
-*/
+
 /*
   xTaskCreate(
     TaskListenForBeacon
@@ -125,6 +122,7 @@ void onReceive (int packetSize){
     ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
     ,  &TaskHandle_ListenForBeacon );
 }
+
 
 /*
 void interruptHandlerStartLoRa(){
@@ -158,6 +156,10 @@ void TaskListenForBeacon(void *pvParameters)
   int tries=0;
   gateway=""; 
   while (LoRa.available()){
+    tries++;
+    if (tries>8){ //diable inf loop
+      break; 
+    }
     gateway += (char)LoRa.read();      // add bytes one by one
   }
   Serial.print("Gateway: " );
@@ -176,10 +178,6 @@ void TaskListenForBeacon(void *pvParameters)
   
   Serial.print("SLEEPTIME ");
   Serial.println(sec);
-
-  //TickType_t xDelay = 1000 * sec;
-  //vTaskDelay( 2000 );
-  //Serial.println("WOken up");
 
   if (listeningToCommands){
     Serial.println("stopping listening to userinput");
@@ -201,8 +199,12 @@ void TaskListenForBeacon(void *pvParameters)
   writeTempSleepEEPROM(temp,sec);
   Serial.println("-------------");
 
+  //TickType_t xDelay = 1000 * sec;
+  //vTaskDelay( xDelay );
+  //Serial.println("WOken up");
+
   amoutBeaconsReceived++;
-  if (amoutBeaconsReceived>=2){
+  if (amoutBeaconsReceived>=20){
     Serial.println("amoutBeaconsReceived>=20");
     xTaskCreate(
     TaskDeepSleep
@@ -219,10 +221,6 @@ void TaskListenForBeacon(void *pvParameters)
 //}
   //interruptHandlerStartLoRa();
 
-  
-  
-
-  
   //long b=sec*1000000;
   //Serial.println(b);
   
@@ -270,7 +268,62 @@ void TaskListenForBeacon(void *pvParameters)
 
 
 void loop() {
-  //empty, we use Tasks
+  //mySleep();
+}
+
+/*
+void vApplicationIdleHook( void ){
+  mySleep();
+}
+
+void mySleep(){
+  Serial.println("idl");
+}
+*/
+ //source: https://www.gammon.com.au/power
+void TaskDeepSleep(void *pvParameters){
+  (void) pvParameters;
+
+
+  //making sure no tasks are left running
+  
+  vTaskDelete(TaskHandle_PrintdB);
+  vTaskDelete(TaskHandle_PrintLastEntry);
+  vTaskDelete(TaskHandle_ListenForBeacon);
+  vTaskDelete(TaskHandle_UserInput);
+  
+  Serial.end(); // disable serial
+  
+  LoRa.end(); //diable LoRa
+  
+  for (byte i = 0; i <= A5; i++){
+    pinMode (i, OUTPUT);    // changed as per below
+    digitalWrite (i, LOW);  //     ditto
+  }
+  
+  // disable ADC
+  ADCSRA = 0; 
+
+  // turn off brown-out enable in software
+  // by changing C:\Users\ruben\Documents\Arduino\hardware\BSFrance-avr-master\avr
+        //"boards.txt"
+  //from lora32u4II.bootloader.extended_fuses=0xcb
+  // to  lora32u4II.bootloader.extended_fuses=0xF7
+
+
+  //low clock speed using :https://www.engbedded.com/fusecalc
+  //from lora32u4II.bootloader.low_fuses=0xe3
+  // to  lora32u4II.bootloader.low_fuses=0xff
+
+  
+  //power_all_disable();//disables a lot of moduals
+  
+  set_sleep_mode (SLEEP_MODE_PWR_DOWN);  
+  noInterrupts ();           // timed sequence follows
+  sleep_enable();
+  interrupts ();
+  sleep_cpu();
+
 }
 
 
@@ -324,59 +377,10 @@ void TaskUserInput(void *pvParameters){
         vTaskDelete(TaskHandle_UserInput); //deletes task after done
         break;
       }
-      vTaskDelay(250);
+      vTaskDelay(500);
   }
 }
 
- //source: https://www.gammon.com.au/power
-void TaskDeepSleep(void *pvParameters){
-  (void) pvParameters;
-  Serial.println("DeepSleepMode");
-  vTaskDelay(500);
-
-  //making sure no tasks are left running
-  /*
-  vTaskDelete(TaskHandle_PrintdB);
-  vTaskDelete(TaskHandle_PrintLastEntry);
-  vTaskDelete(TaskHandle_ListenForBeacon);
-  vTaskDelete(TaskHandle_UserInput);
-  */
-  
-  noInterrupts();//turn off interrupts 
-  
-  set_sleep_mode(SLEEP_MODE_PWR_DOWN); 
-  
-
-  Serial.end(); // disable serial
-  
-  LoRa.end(); //diable LoRa
-  
-  for (byte i = 0; i <= A5; i++){
-    pinMode (i, OUTPUT);    // changed as per below
-    digitalWrite (i, LOW);  //     ditto
-  }
-  
-  // disable ADC
-  ADCSRA = 0; 
-
-  // turn off brown-out enable in software
-  // by changing C:\Users\ruben\Documents\Arduino\hardware\BSFrance-avr-master\avr
-        //"boards.txt"
-  //from lora32u4II.bootloader.extended_fuses=0xcb
-  // to  lora32u4II.bootloader.extended_fuses=0xF7
-
-
-  //low clock speed using :https://www.engbedded.com/fusecalc
-  //from lora32u4II.bootloader.low_fuses=0xE3
-  // to  lora32u4II.bootloader.low_fuses=0xff
-
-  
-  power_all_disable();//disables a lot of moduals
-  
-  sleep_enable();
-  sleep_cpu();
-
-}
 
 
 void TaskPrintdB(void *pvParameters)
