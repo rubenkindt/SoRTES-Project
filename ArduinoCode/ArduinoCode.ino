@@ -1,12 +1,10 @@
-// .\ArduinoSketchUploader.exe --file=SorTeS_GW07.hex --port=COM4 --model=Leonardo
-// TODO: ctrl F for 'TODO'
+// created by Ruben Kindt for the SoRTES-Project in the course Software for Real-time and Embedded Systems (B-KUL-H04L2A) in the winter of 2020
 
 #include <Arduino_FreeRTOS.h>
 #include <EEPROM.h> //to be able to writ in EEPROM using EEPROM.write(addr, val); our EEPROM is 1024 bits big
 #include <LoRa.h>
 #include <avr/sleep.h>
 #include <avr/power.h>
-
 #define SCK     15
 #define MISO    14
 #define MOSI    16
@@ -48,8 +46,8 @@ void setup() {
   //EEPROM.write(nextEntryAdressLocation,byte(firstdbEntry));
   
   for (byte i = 0; i <= A5; i++){
-    pinMode (i, OUTPUT);    // changed as per below
-    digitalWrite (i, LOW);  //     ditto
+    pinMode (i, OUTPUT);    //reduses 0.1mA, compaired to Input
+    digitalWrite (i, LOW);
   }
   
   Serial.begin(9600);
@@ -130,6 +128,7 @@ void TaskListenForBeacon(void *pvParameters)
         if (gateway.substring(0,4) == "GW07"){ //find GW07 in the received string
           break;
         }   
+        vTaskDelay( 250 /portTICK_PERIOD_MS);
       }
     }
     Serial.print("Gateway: " );
@@ -153,8 +152,11 @@ void TaskListenForBeacon(void *pvParameters)
     
     Serial.print("Temp: ");
     Serial.println(temp);
+    vTaskSuspendAll();  //
     writeTempSleepEEPROM(temp,sec);
+    xTaskResumeAll();
     Serial.println("-------------");
+    
   
     if (listeningToCommands){
       Serial.println("stopping listening to userinput");
@@ -192,7 +194,7 @@ void vApplicationIdleHook( void ){
   mySleep();
 }
 
-void mySleep(){
+void mySleep(){ // drops the idle from 15,7mA to 11.3mA
 
   //set_sleep_mode (SLEEP_MODE_IDLE);  works also but uses 12mA
   set_sleep_mode (SLEEP_MODE_ADC);  // uses 11.3mA
@@ -207,7 +209,7 @@ void mySleep(){
  //source: https://www.gammon.com.au/power
 void TaskDeepSleep(void *pvParameters){
   (void) pvParameters;
-
+  while (true){
   //making sure no tasks are left running
   
   vTaskDelete(TaskHandle_PrintdB);
@@ -246,7 +248,7 @@ void TaskDeepSleep(void *pvParameters){
   sleep_enable();
   interrupts ();
   sleep_cpu();
-
+  }
 }
 
 
@@ -296,7 +298,7 @@ void TaskUserInput(void *pvParameters){
       vTaskDelete(TaskHandle_UserInput); //deletes task after done
       break;
     }
-    vTaskDelay(50/portTICK_PERIOD_MS);
+    vTaskDelay(250/portTICK_PERIOD_MS);
   }
 }
 
@@ -404,7 +406,7 @@ int8_t getTemperatureInternal() {
   ADMUX = (1<<REFS1) | (1<<MUX2) | (1<<MUX1) | (1<<MUX0);
   ADCSRB |= (1<<MUX5);
 
-  //delay(2) onacceptable TODO
+  //delay(2) onacceptable delay
  
   // start the conversion
   ADCSRA |= bit(ADSC);
