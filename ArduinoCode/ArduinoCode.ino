@@ -20,8 +20,6 @@ int firstdbEntry=nextEntryAdressLocation+8;
 const int beaconsUntilSleep=20;
 
 // define tasks
-//void TaskBlink( void *pvParameters );
-//void TaskAnalogRead( void *pvParameters );
 void TaskPrintdB( void *pvParameters );
 TaskHandle_t TaskHandle_PrintdB;
 void TaskPrintLastEntry(void *pvParameters);
