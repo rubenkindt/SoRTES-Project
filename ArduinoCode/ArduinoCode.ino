@@ -4,7 +4,8 @@
 #include <EEPROM.h> //to be able to writ in EEPROM using EEPROM.write(addr, val); our EEPROM is 1024 bits big
 #include <LoRa.h>
 #include <avr/sleep.h>
-#include <avr/power.h>
+//#include <avr/power.h>
+
 #define SCK     15
 #define MISO    14
 #define MOSI    16
@@ -14,10 +15,11 @@
 #define BAND    869300000
 #define PABOOST true 
 
-int sleepEEPROMLocation=0;
-int nextEntryAdressLocation=8;
+int sleepEEPROMLocation=16;
+int nextEntryAdressLocation=24;
 int firstdbEntry=nextEntryAdressLocation+8;
-const int beaconsUntilSleep=20;
+byte nextEntryAdress;
+int randomValue =12;
 
 // define tasks
 void TaskPrintdB( void *pvParameters );
@@ -31,17 +33,19 @@ TaskHandle_t TaskHandle_ListenForBeacon;
 void TaskUserInput(void *pvParameters);
 TaskHandle_t TaskHandle_UserInput;
 
-
-byte nextEntryAdress;
 volatile bool listeningToCommands;
 byte command =0;
+
 volatile int amoutBeaconsReceived=0;
+const int beaconsUntilSleep=20;
 
-
-// the setup function runs once when you press reset or power the board
 void setup() {
   //clear database
-  //EEPROM.write(nextEntryAdressLocation,byte(firstdbEntry));
+  if (EEPROM.read(0)!=randomValue){
+    // first time running program, init db
+    EEPROM.write(0,randomValue);
+    EEPROM.write(nextEntryAdressLocation,byte(firstdbEntry));
+  }
   
   for (byte i = 0; i <= A5; i++){
     pinMode (i, OUTPUT);    //reduses 0.1mA, compaired to Input
@@ -220,8 +224,8 @@ void TaskDeepSleep(void *pvParameters){
   LoRa.end(); //diable LoRa
   
   for (byte i = 0; i <= A5; i++){
-    pinMode (i, OUTPUT);    // changed as per below
-    digitalWrite (i, LOW);  //     ditto
+    pinMode (i, OUTPUT);
+    digitalWrite (i, LOW);
   }
   
   // disable ADC
@@ -344,6 +348,7 @@ void TaskprintLastEntry(void *pvParameters)
   nextEntryAdress=EEPROM.read(nextEntryAdressLocation);
   byte adressLastEntry=nextEntryAdress-8;
   if (adressLastEntry<firstdbEntry){
+    Serial.println(adressLastEntry);
     Serial.println("No entries");
     return;
   }
@@ -372,7 +377,7 @@ void writeTempSleepEEPROM(int8_t temp,int8_t sleepSec){
   EEPROM.write(sleepEEPROMLocation,sleepSec);
   nextEntryAdress=EEPROM.read(nextEntryAdressLocation);
   
-  if (nextEntryAdress >= 256){ // overflow
+  if (nextEntryAdress +8 >= 255){ // prevent overflow
     nextEntryAdress=firstdbEntry;
   }
   
@@ -383,7 +388,7 @@ void writeTempSleepEEPROM(int8_t temp,int8_t sleepSec){
   Serial.println(nextEntryAdress,DEC);
 
   Serial.print("writen temp : ");
-  a.println(temp,BIN);
+  Serial.println(temp,BIN);
   */
   
   nextEntryAdress+=8; //move nextEntry 
